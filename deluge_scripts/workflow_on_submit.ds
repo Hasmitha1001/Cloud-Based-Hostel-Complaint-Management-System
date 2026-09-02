@@ -1,0 +1,13 @@
+// Deluge Script for Zoho Creator: Hostel Complaint Management System
+void complaint_on_submit()
+{
+    if(input.Status == null || input.Status == "") {
+        input.Status = "Open";
+    }
+    if(input.Date_Submitted == null) {
+        input.Date_Submitted = zoho.currentdate;
+    }
+    if(input.Priority == "High") {
+        info "ALERT: High priority complaint submitted for Room: " + input.Hostel_Room_Number;
+    }
+}
