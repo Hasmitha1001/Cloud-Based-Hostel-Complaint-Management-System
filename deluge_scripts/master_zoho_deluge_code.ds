@@ -1,0 +1,147 @@
+/* 
+================================================================================
+  ZOHO CREATOR DELUGE SCRIPTING MASTER MODULE
+  APPLICATION: Hostel Complaint Management System
+  PLATFORM: Zoho Creator (Software as a Service - SaaS)
+================================================================================
+*/
+
+// ============================================================================
+// MODULE 1: FORM ON SUCCESS WORKFLOW
+// Trigger: Hostel Complaint Form -> On Success Submission
+// Purpose: Automatically initializes complaint status, sets date, generates 
+//          unique reference tracking numbers, and sends email notifications.
+// ============================================================================
+
+void complaint_on_success_workflow()
+{
+    // 1. Set Default Workflow Status if unassigned
+    if(input.Status == null || input.Status == "")
+    {
+        input.Status = "Open";
+    }
+
+    // 2. Auto-capture submission timestamp
+    if(input.Date_Submitted == null)
+    {
+        input.Date_Submitted = zoho.currentdate;
+    }
+
+    // 3. Auto-generate Reference Tracking Number (Format: CMP-YYYYMMDD-XXXX)
+    if(input.Complaint_ID == null || input.Complaint_ID == "")
+    {
+        curr_year = zoho.currentdate.toString("yyyyMMdd");
+        input.Complaint_ID = "CMP-" + curr_year + "-" + input.ID.toString();
+    }
+
+    // 4. High Priority Alert Dispatch Trigger
+    if(input.Priority == "High")
+    {
+        // Log system alert message
+        info "ALERT: High priority complaint submitted by " + input.Student_Name + " for Room: " + input.Hostel_Room_Number;
+        
+        // Send email alert to Hostel Maintenance Warden
+        sendmail
+        [
+            from : zoho.adminemail
+            to : "warden.hostel@institution.edu"
+            subject : "URGENT [HIGH PRIORITY]: " + input.Complaint_Category + " - " + input.Hostel_Room_Number
+            message : "Dear Warden,<br><br>A high-priority complaint has been lodged.<br><br><b>Student Name:</b> " + input.Student_Name + "<br><b>Student ID:</b> " + input.Student_ID + "<br><b>Room Number:</b> " + input.Hostel_Room_Number + "<br><b>Category:</b> " + input.Complaint_Category + "<br><b>Description:</b> " + input.Description + "<br><br>Please dispatch maintenance personnel immediately."
+        ];
+    }
+    
+    // 5. Send Confirmation Email to Student
+    if(input.Student_Email != null && input.Student_Email != "")
+    {
+        sendmail
+        [
+            from : zoho.adminemail
+            to : input.Student_Email
+            subject : "Complaint Registered - Ticket ID: " + input.Complaint_ID
+            message : "Dear " + input.Student_Name + ",<br><br>Your hostel complaint has been registered successfully on the cloud portal.<br><br><b>Complaint ID:</b> " + input.Complaint_ID + "<br><b>Status:</b> Open<br><b>Category:</b> " + input.Complaint_Category + "<br><br>Thank you,<br>Hostel Management Team"
+        ];
+    }
+}
+
+
+// ============================================================================
+// MODULE 2: FIELD DYNAMIC VALIDATION WORKFLOW
+// Trigger: Hostel Complaint Form -> On User Input (Field Validations)
+// Purpose: Validates student register number format, room input, and blocks empty inputs.
+// ============================================================================
+
+void validate_student_inputs()
+{
+    // Validate Register Number length & format
+    if(input.Student_ID != null && input.Student_ID.length() < 10)
+    {
+        alert "Invalid Student ID! Please enter a valid 13-digit Register Number.";
+        cancel submit;
+    }
+    
+    // Ensure Description has sufficient detail
+    if(input.Description != null && input.Description.length() < 15)
+    {
+        alert "Please provide a detailed description of the issue (minimum 15 characters).";
+        cancel submit;
+    }
+}
+
+
+// ============================================================================
+// MODULE 3: STATUS UPDATE AUTOMATION & MAINTENANCE LOGGING
+// Trigger: All Complaints Report -> Record Update (On User Update)
+// Purpose: Calculates resolution turnaround time and updates status.
+// ============================================================================
+
+void complaint_on_status_update()
+{
+    // If complaint is marked as Resolved, record Resolution Date
+    if(input.Status == "Resolved")
+    {
+        input.Resolution_Date = zoho.currentdate;
+        
+        // Calculate resolution duration in days
+        if(input.Date_Submitted != null)
+        {
+            duration_days = daysBetween(input.Date_Submitted, input.Resolution_Date);
+            input.Turnaround_Days = duration_days;
+        }
+        
+        // Notify Student of Resolution
+        if(input.Student_Email != null && input.Student_Email != "")
+        {
+            sendmail
+            [
+                from : zoho.adminemail
+                to : input.Student_Email
+                subject : "COMPLAINT RESOLVED - Ticket ID: " + input.Complaint_ID
+                message : "Dear " + input.Student_Name + ",<br><br>Your complaint (ID: " + input.Complaint_ID + ") regarding " + input.Complaint_Category + " has been marked as <b>RESOLVED</b>.<br><br>If you face further issues, please respond to this cloud notification."
+            ];
+        }
+    }
+}
+
+
+// ============================================================================
+// MODULE 4: REST API INTEGRATION & CLOUD WEBHOOK (EXTERNAL INTEGRATION)
+// Trigger: Custom Function / API Endpoint
+// Purpose: Exposes complaint data as JSON endpoint for external dashboard sync.
+// ============================================================================
+
+string get_complaint_summary_json()
+{
+    open_tickets = Hostel_Complaint_Record[Status == "Open"].count();
+    progress_tickets = Hostel_Complaint_Record[Status == "In Progress"].count();
+    resolved_tickets = Hostel_Complaint_Record[Status == "Resolved"].count();
+    total_tickets = Hostel_Complaint_Record[ID > 0].count();
+    
+    response_map = Map();
+    response_map.put("total_complaints", total_tickets);
+    response_map.put("open_complaints", open_tickets);
+    response_map.put("in_progress", progress_tickets);
+    response_map.put("resolved_complaints", resolved_tickets);
+    response_map.put("status", "SUCCESS");
+    
+    return response_map.toString();
+}
